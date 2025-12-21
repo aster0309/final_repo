@@ -230,7 +230,7 @@ def create_todo(
 # 如果你們想要讓回傳看起來更像一個「系統」，可以回傳一個字典
 @app.get("/todos/")
 def read_todos(
-    current_user: User = Depends(get_current_user), # <--- 這裡變了！
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     # 只撈 current_user 自己的資料
@@ -243,8 +243,12 @@ def read_todos(
     }
 # 3. 簡單分析待辦事項
 @app.get("/todos/summary")
-def get_summary(session: Session = Depends(get_session)):
-    todos = session.exec(select(Todo)).all()
+def get_summary(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    statement = select(Todo).where(Todo.owner_id == current_user.id)
+    todos = session.exec(statement).all()
     
     # 在 Python 這裡做一點「處理」，而不只是單純讀資料庫
     urgent_count = sum(1 for t in todos if t.priority >= 3)
