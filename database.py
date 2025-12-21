@@ -1,5 +1,5 @@
-from typing import Optional
-from sqlmodel import Field, SQLModel, create_engine, Session
+from typing import List, Optional
+from sqlmodel import Field, SQLModel, create_engine, Session, Relationship
 from datetime import datetime
 
 # 1. 基礎模型 (共用欄位)
@@ -14,11 +14,32 @@ class TodoBase(SQLModel):
 class TodoCreate(TodoBase):
     pass
 
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True) # 帳號不能重複
+    
+    # 這裡可以之後再做密碼加密，現在先存明碼或是模擬即可
+    hashed_password: str
+    # 這是關聯設定 (這是給程式看的，不是資料庫欄位)
+    todos: List["Todo"] = Relationship(back_populates="owner")
+
+# 用來接收前端註冊資料的模型
+class UserCreate(SQLModel):
+    username: str
+    password: str # 使用者輸入的明碼
+
 # 3. 資料庫專用模型 (Database Table)
 # 這裡專門給資料庫用
 class Todo(TodoBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    title: str
     is_completed: bool = False
+
+    # --- 新增這行：外鍵 ---
+    #這代表這個欄位必須對應到 User 表的 id
+    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    # 這是關聯設定 (方便你用 todo.owner 直接拿到使用者資料)
+    owner: Optional[User] = Relationship(back_populates="todos")
 
 # 設定資料庫連線 (本機開發用 SQLite)
 sqlite_file_name = "database.db"
