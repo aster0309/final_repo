@@ -120,6 +120,13 @@ app.add_middleware(
 
 @app.post("/register")
 def register(user_in: UserCreate, session: Session = Depends(get_session)):
+    # 檢查輸入是否空白
+    if not user_in.username or not user_in.username.strip() or not user_in.password or not user_in.password.strip():
+        raise HTTPException(status_code=400, detail="帳號或密碼不能輸入空白")
+    
+    user_in.username = user_in.username.strip()
+    user_in.password = user_in.password.strip()
+
     # 檢查帳號是否重複
     existing_user = session.exec(select(User).where(User.username == user_in.username)).first()
     if existing_user:
@@ -141,6 +148,10 @@ class LoginRequest(SQLModel):
 
 @app.post("/login")
 def login(data: LoginRequest, response: Response, session: Session = Depends(get_session)):
+    # 檢查輸入是否空白
+    if not data.username or not data.username.strip() or not data.password or not data.password.strip():
+        raise HTTPException(status_code=400, detail="帳號或密碼不能輸入空白")
+    
     # 1. 找使用者
     user = session.exec(select(User).where(User.username == data.username)).first()
     
@@ -290,6 +301,30 @@ def get_summary(
         "urgent_tasks": urgent_count, # 告訴助教：看！我有用程式判斷有多少緊急事項
         "completion_rate": f"{ (completed_count / len(todos) * 100) if todos else 0 }%"
     }
+
+# 4. 更改完成狀態 (Update)
+@app.patch("/todos/{todo_id}/complete", response_model=Todo)
+def mark_completed(todo_id: int, session: Session = Depends(get_session)):
+    # 步驟 1: 根據 ID 去資料庫找這筆資料
+    todo = session.get(Todo, todo_id)
+    
+    # 步驟 2: 如果找不到 (是 None)，就回傳 404 錯誤
+    if not todo:
+        raise HTTPException(status_code=404, detail="找不到這筆待辦事項")
+    
+    # 步驟 3: 修改狀態
+    # 這裡我們設計成：只要呼叫這個 API，就視為「已完成」(True)
+    # 如果你想做成「切換」(True 變 False, False 變 True)，可以寫: todo.is_completed = not todo.is_completed
+    todo.is_completed = True 
+    
+    # 步驟 4: 存檔
+    session.add(todo)
+    session.commit()
+    session.refresh(todo)
+    
+    return todo
+
+# 刪除待辦事項
 @app.delete("/todos/{todo_id}")
 def delete_todo(todo_id: int, session: Session = Depends(get_session)):
     # 步驟 1: 找資料
