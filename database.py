@@ -8,6 +8,9 @@ class TodoBase(SQLModel):
     # 這裡只寫定義，不寫 table=True
     due_date: Optional[datetime] = None 
     priority: int = 1
+    # category 代表「類別」，我們給它一個預設值 "一般"
+    # index=True 可以讓資料庫查詢類別時速度更快
+    category: str = Field(default="一般", index=True)
 
 # 2. 輸入專用模型 (Create DTO)
 # 這裡專門給 API 用，Pydantic 在這裡工作最準確

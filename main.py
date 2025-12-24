@@ -237,9 +237,12 @@ def read_todos(
 ):
     # 只撈 current_user 自己的資料
     statement = select(Todo).where(Todo.owner_id == current_user.id)
+    # 如果使用者有傳入類別（不是 None），就在 SQL 加上過濾條件
+    if category:
+        statement = statement.where(Todo.category == category)
 
     results = session.exec(statement).all()
-    
+
     total = len(session.exec(statement).all())
     return {
         "status": "success",
