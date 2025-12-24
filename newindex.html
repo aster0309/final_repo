@@ -51,6 +51,8 @@
             <div class="flex gap-2 mb-8">
                 <input type="text" id="task-title" placeholder="輸入新的任務名稱..."
                     class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="datetime-local" id="task-due-date" 
+                    class="px-2 py-2 border rounded-lg text-gray-600 focus:ring-2 focus:ring-blue-500">
                 <select id="task-priority" class="px-2 py-2 border rounded-lg">
                     <option value="1">低</option>
                     <option value="2">中</option>
@@ -200,20 +202,41 @@
 
             todos.forEach(todo => {
                 const item = document.createElement('div');
-                item.className = `flex items-center justify-between p-4 border rounded-lg ${todo.is_completed ? 'bg-gray-50' : 'bg-white'}`;
+
+                // 1. 決定外框樣式：如果過期且未完成，給它紅框
+                const borderClass = (todo.is_expired && !todo.is_completed) ? 'border-red-500 bg-red-50' : (todo.is_completed ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200');
+
+                item.className = `flex items-center justify-between p-4 border rounded-lg shadow-sm transition-all ${borderClass}`;
+
+                // 2. 格式化日期顯示 (如果有 due_date)
+                const dateDisplay = todo.due_date ? new Date(todo.due_date).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '無期限';
+
                 item.innerHTML = `
-                    <div class="flex items-center gap-3">
-                        <input type="checkbox" ${todo.is_completed ? 'checked' : ''} 
-                               onchange="toggleComplete(${todo.id})" class="w-5 h-5 cursor-pointer">
-                        <div>
-                            <span class="${todo.is_completed ? 'line-through text-gray-400' : 'text-gray-800'} font-medium">${todo.title}</span>
-                            <span class="ml-2 text-xs px-2 py-1 rounded ${todo.priority >= 3 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}">P${todo.priority}</span>
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" ${todo.is_completed ? 'checked' : ''} 
+                        onchange="toggleComplete(${todo.id})" class="w-5 h-5 cursor-pointer accent-blue-600">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="${todo.is_completed ? 'line-through text-gray-400' : (todo.is_expired ? 'text-red-600 font-bold' : 'text-gray-800')} font-medium">
+                                ${todo.title}
+                            </span>
+                            
+                            <span class="text-xs px-2 py-0.5 rounded ${todo.priority >= 3 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}">P${todo.priority}</span>
+                            
+                            ${(todo.is_expired && !todo.is_completed) ? '<span class="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded-full animate-pulse">已逾期</span>' : ''}
+                        </div>
+                        
+                        <div class="text-xs ${todo.is_expired && !todo.is_completed ? 'text-red-400' : 'text-gray-400'} mt-1">
+                            截止日：${dateDisplay}
                         </div>
                     </div>
-                    <button onclick="deleteTodo(${todo.id})" class="text-red-400 hover:text-red-600">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                `;
+                </div>
+                <button onclick="deleteTodo(${todo.id})" class="text-gray-400 hover:text-red-600 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                </button>
+            `;
                 list.appendChild(item);
             });
         }
@@ -226,9 +249,11 @@
             }
 
             const titleInput = document.getElementById('task-title');
-            const title = titleInput.value;
             const priority = document.getElementById('task-priority').value;
+            const dateInput = document.getElementById('task-due-date');
 
+            const title = titleInput.value;
+            const dueDate = dateInput.value;
             if (!title) return alert("請輸入任務名稱");
 
             console.log("=== 開始新增任務測試 ===");
@@ -237,7 +262,7 @@
                 const res = await fetch(`${API_URL}/todos/`, fetchOptions('POST', {
                     title: title,
                     priority: parseInt(priority),
-                    due_date: null
+                    due_date: dueDate ? dueDate : null
                 }));
 
                 console.log("API 回應狀態碼:", res.status);
@@ -245,7 +270,8 @@
                 if (res.ok) {
                     console.log("新增成功！");
                     titleInput.value = "";
-                    // fetchTodos(); // 暫時還是關著，觀察頁面會不會動
+                    dateInput.value = "";
+                    fetchTodos(); // 暫時還是關著，觀察頁面會不會動
                 } else {
                     const errorText = await res.text();
                     console.error("新增失敗，後端回傳:", errorText);

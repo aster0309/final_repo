@@ -1,7 +1,7 @@
 import bcrypt
 from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, status
 from sqlmodel import Session, select, SQLModel
-from database import Todo, TodoCreate, User, UserCreate, engine, create_db_and_tables
+from database import Todo,TodoRead,TodoListResponse, TodoCreate, User, UserCreate, engine, create_db_and_tables
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
@@ -180,7 +180,7 @@ def login(data: LoginRequest, response: Response, session: Session = Depends(get
         value=f"Bearer {access_token}", 
         httponly=True,
         samesite="lax", # 建議加上這個
-         secure=False 
+        secure=False 
     )
     
     # 新增這行：把 refresh token 也存進 cookie
@@ -264,11 +264,11 @@ def create_todo(
     session.add(todo_db)
     session.commit()
     session.refresh(todo_db)
-    return todo_db
+    return TodoRead.from_db(todo_db)
 
 # 2. 查詢所有待辦事項 (Read)
 # 如果你們想要讓回傳看起來更像一個「系統」，可以回傳一個字典
-@app.get("/todos/")
+@app.get("/todos/", response_model=TodoListResponse)
 def read_todos(
     
     category: Optional[str] = None, # 新增查詢參數
@@ -287,7 +287,7 @@ def read_todos(
     return {
         "status": "success",
         "total_count": total,
-        "data": session.exec(statement).all()
+        "data": [TodoRead.from_db(t) for t in results]
     }
 # 3. 簡單分析待辦事項
 @app.get("/todos/summary")

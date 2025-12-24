@@ -8,6 +8,7 @@ class TodoBase(SQLModel):
     # 這裡只寫定義，不寫 table=True
     due_date: Optional[datetime] = None 
     priority: int = 1
+    
     # category 代表「類別」，我們給它一個預設值 "一般"
     # index=True 可以讓資料庫查詢類別時速度更快
     category: str = Field(default="一般", index=True)
@@ -43,7 +44,26 @@ class Todo(TodoBase, table=True):
     owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
     # 這是關聯設定 (方便你用 todo.owner 直接拿到使用者資料)
     owner: Optional[User] = Relationship(back_populates="todos")
+#  增加一個「輸出專用」的模型 (加工模型)
+# 3. 給前端看的輸出 (保證有 id, 有 title, 有 is_expired)
+class TodoRead(TodoBase):
+    id: int              # 這裡定義了，id 就一定會回傳
+    is_completed: bool
+    owner_id: Optional[int]
+    is_expired: bool = False 
 
+    @classmethod
+    def from_db(cls, todo: Todo):
+        # 使用 model_validate 來繼承原本的所有資料
+        obj = cls.model_validate(todo)
+        # 額外計算過期邏輯
+        if todo.due_date and not todo.is_completed:
+            obj.is_expired = datetime.now() > todo.due_date
+        return obj
+class TodoListResponse(SQLModel):
+    status: str
+    total_count: int
+    data: List[TodoRead]
 # 設定資料庫連線 (本機開發用 SQLite)
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
