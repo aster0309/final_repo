@@ -1,3 +1,4 @@
+import bcrypt
 from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, status
 from sqlmodel import Session, select, SQLModel
 from database import Todo, TodoCreate, User, UserCreate, engine, create_db_and_tables
@@ -16,7 +17,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30 # Token 有效期 30 分鐘
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # Refresh Token 7天後過期
 # 密碼加密器
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+#pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- 🛠️ 工具函式 (Helper Functions) ---
 
@@ -26,12 +27,26 @@ def get_session():
         yield session
 
 # 1. 驗證密碼 (檢查輸入的跟資料庫的亂碼是否一樣)
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, hashed_password: str):
+    """驗證密碼是否正確"""
+    try:
+        # bcrypt 需要 bytes 格式進行比較
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'), 
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
 
 # 2. 密碼加密 (把 "123456" 變成亂碼)
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def get_password_hash(password: str):
+    """將密碼加密"""
+    # bcrypt 限制密碼長度為 72 字节（通常不用擔心，除非密碼超級長）
+    # 這裡我們手動處理，避免 passlib 的內部測試 Bug
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode('utf-8') # 轉成字串存入資料庫
 
 # 3. 製作 JWT Token
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -88,7 +103,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 origins = [
-    "https://127.0.0.1",
+    "http://127.0.0.1:5500",  # Live Server 最常見的埠號   # 後端自己的埠號
+    "http://localhost:5500",
+    "http://127.0.0.1:8000",
     "null"
 ]
 app.add_middleware(
@@ -151,7 +168,8 @@ def login(data: LoginRequest, response: Response, session: Session = Depends(get
         key="access_token", 
         value=f"Bearer {access_token}", 
         httponly=True,
-        samesite="lax" # 建議加上這個
+        samesite="lax", # 建議加上這個
+         secure=False 
     )
     
     # 新增這行：把 refresh token 也存進 cookie
@@ -159,11 +177,22 @@ def login(data: LoginRequest, response: Response, session: Session = Depends(get
         key="refresh_token", 
         value=refresh_token, # Refresh token 通常不需要 "Bearer " 前綴，直接存就好
         httponly=True,
-        samesite="lax"
+        samesite="lax",
+        secure=False
     )
 
     return {"message": "登入成功", "access_token": access_token, "refresh_token": refresh_token}
-
+@app.post("/logout")
+async def logout(response: Response):
+    # 這裡的 key 必須跟你登入時設定的名稱一模一樣 (通常是 access_token)
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=False  # 如果你是在本地 http 執行，設為 False
+    )
+    return {"message": "已登出"}
 @app.post("/refresh")
 def refresh_token(
     response: Response,
@@ -261,6 +290,21 @@ def get_summary(
         "urgent_tasks": urgent_count, # 告訴助教：看！我有用程式判斷有多少緊急事項
         "completion_rate": f"{ (completed_count / len(todos) * 100) if todos else 0 }%"
     }
+@app.delete("/todos/{todo_id}")
+def delete_todo(todo_id: int, session: Session = Depends(get_session)):
+    # 步驟 1: 找資料
+    todo = session.get(Todo, todo_id)
+    
+    # 步驟 2: 找不到就報錯
+    if not todo:
+        raise HTTPException(status_code=404, detail="找不到這筆待辦事項")
+    
+    # 步驟 3: 刪除
+    session.delete(todo)
+    session.commit()
+    
+    # 步驟 4: 回傳一個簡單的訊息告訴使用者刪除成功
+    return {"message": "刪除成功", "deleted_id": todo_id}
 
 
 
