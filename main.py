@@ -230,11 +230,16 @@ def create_todo(
 # 如果你們想要讓回傳看起來更像一個「系統」，可以回傳一個字典
 @app.get("/todos/")
 def read_todos(
+    
+    category: Optional[str] = None, # 新增查詢參數
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     # 只撈 current_user 自己的資料
     statement = select(Todo).where(Todo.owner_id == current_user.id)
+
+    results = session.exec(statement).all()
+    
     total = len(session.exec(statement).all())
     return {
         "status": "success",
