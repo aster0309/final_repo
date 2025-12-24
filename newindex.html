@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的待辦清單 - 認證版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-3xl mx-auto">
+
+        <div id="auth-section" class="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <h2 id="auth-title" class="text-2xl font-bold text-gray-800 mb-4">🔑 登入系統</h2>
+            <div class="space-y-4">
+                <input type="text" id="username" placeholder="帳號"
+                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <input type="password" id="password" placeholder="密碼"
+                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <div class="flex gap-2">
+                    <button onclick="handleLogin()"
+                        class="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">登入</button>
+                    <button onclick="handleRegister()"
+                        class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition">註冊新帳號</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="main-content" class="hidden bg-white rounded-xl shadow-lg p-6">
+            <div class="flex justify-between items-center mb-6 border-b pb-4">
+                <h1 class="text-3xl font-bold text-gray-800">📝 我的待辦事項</h1>
+                <button onclick="logout()" class="text-sm text-red-500 hover:underline">登出</button>
+            </div>
+
+            <div id="summary" class="grid grid-cols-3 gap-4 mb-8 text-center">
+                <div class="bg-blue-50 p-3 rounded-lg">
+                    <p class="text-sm text-blue-600">總任務</p>
+                    <p id="total-tasks" class="text-xl font-bold">0</p>
+                </div>
+                <div class="bg-red-50 p-3 rounded-lg">
+                    <p class="text-sm text-red-600">緊急事項</p>
+                    <p id="urgent-tasks" class="text-xl font-bold">0</p>
+                </div>
+                <div class="bg-green-50 p-3 rounded-lg">
+                    <p class="text-sm text-green-600">完成率</p>
+                    <p id="completion-rate" class="text-xl font-bold">0%</p>
+                </div>
+            </div>
+
+            <div class="flex gap-2 mb-8">
+                <input type="text" id="task-title" placeholder="輸入新的任務名稱..."
+                    class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select id="task-priority" class="px-2 py-2 border rounded-lg">
+                    <option value="1">低</option>
+                    <option value="2">中</option>
+                    <option value="3">高</option>
+                </select>
+                <button type="button" onclick="addTodo(event)"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">新增任務</button>
+            </div>
+
+            <div id="todo-list" class="space-y-3">
+                <p class="text-center text-gray-500">載入中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+
+        // 核心設定：讓 fetch 自動帶上 Cookie 
+        const fetchOptions = (method = 'GET', body = null) => {
+            const options = {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include' // 重要：這會發送 Cookie 
+            };
+            if (body) options.body = JSON.stringify(body);
+            return options;
+        };
+        async function authorizedFetch(url, options = {}) {
+            return fetch(url, {
+                ...options,
+                credentials: 'include', // 重要：這會讓瀏覽器發送 Cookie 
+                headers: {
+                    ...options.headers,
+                    'Content-Type': 'application/json',
+                }
+            });
+        }
+
+        // --- 登入與註冊邏輯 ---
+
+        async function handleLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch(`${API_URL}/login`, fetchOptions('POST', { username, password }));
+
+                if (res.ok) {
+                    const data = await res.json();
+                    alert("登入成功！");
+                    showTodoApp();
+                } else {
+                    const errorData = await res.json().catch(() => ({ detail: "後端發生未預期錯誤" }));
+                    alert(data.detail || "登入失敗");
+                }
+            } catch (err) {
+                alert("無法連線至後端伺服器");
+                alert("發生錯誤：" + err.message);
+            }
+        }
+
+        async function handleRegister() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            const res = await fetch(`${API_URL}/register`, fetchOptions('POST', { username, password }));
+            if (res.ok) {
+                alert("註冊成功，請登入！");
+            } else {
+                const data = await res.json();
+                alert(data.detail || "註冊失敗");
+            }
+        }
+
+        function showTodoApp() {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+        }
+
+        async function logout() {
+            try {
+                // 1. 告訴後端我們要刪除 Cookie
+                const res = await fetch(`${API_URL}/logout`, {
+                    method: 'POST',
+                    credentials: 'include' // 這一行超重要，不然 Cookie 刪不掉
+                });
+
+                if (res.ok) {
+                    console.log("後端登出成功");
+
+                    // 2. 清除介面狀態
+                    document.getElementById('main-content').classList.add('hidden');
+                    document.getElementById('auth-section').classList.remove('hidden');
+
+                    // 3. (選做) 清空輸入框
+                    document.getElementById('username').value = "";
+                    document.getElementById('password').value = "";
+
+                    // 4. 強制重新整理一次頁面（最保險的做法，確保所有狀態歸零）
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error("登出連線失敗:", err);
+            }
+        }
+
+        // --- 待辦清單邏輯 (需加入認證處理) ---
+
+        async function fetchTodos() {
+            try {
+                const res = await fetch(`${API_URL}/todos/`, fetchOptions());
+
+                if (res.status === 401) {
+                    console.warn("驗證失敗，保持在登入頁面");
+                    showLogin(); // 確保這時候顯示的是登入框
+                    return;
+                }
+
+                if (res.ok) {
+                    const result = await res.json();
+
+                    // 抓取統計資料
+                    const summaryRes = await fetch(`${API_URL}/todos/summary`, fetchOptions());
+                    const summary = await summaryRes.json();
+
+                    // 1. 更新資料
+                    updateUI(result.data, summary);
+
+                    // 2. 關鍵：成功拿到資料後，一定要執行切換介面的動作！
+                    showTodoApp();
+
+                    console.log("資料更新成功！");
+                }
+            } catch (err) {
+                console.error("抓取資料失敗:", err);
+            }
+        }
+
+        function updateUI(todos, summary) {
+            document.getElementById('total-tasks').innerText = summary.total_tasks;
+            document.getElementById('urgent-tasks').innerText = summary.urgent_tasks;
+            document.getElementById('completion-rate').innerText = summary.completion_rate;
+
+            const list = document.getElementById('todo-list');
+            list.innerHTML = todos.length ? "" : '<p class="text-center text-gray-500">目前沒有任務</p>';
+
+            todos.forEach(todo => {
+                const item = document.createElement('div');
+                item.className = `flex items-center justify-between p-4 border rounded-lg ${todo.is_completed ? 'bg-gray-50' : 'bg-white'}`;
+                item.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" ${todo.is_completed ? 'checked' : ''} 
+                               onchange="toggleComplete(${todo.id})" class="w-5 h-5 cursor-pointer">
+                        <div>
+                            <span class="${todo.is_completed ? 'line-through text-gray-400' : 'text-gray-800'} font-medium">${todo.title}</span>
+                            <span class="ml-2 text-xs px-2 py-1 rounded ${todo.priority >= 3 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}">P${todo.priority}</span>
+                        </div>
+                    </div>
+                    <button onclick="deleteTodo(${todo.id})" class="text-red-400 hover:text-red-600">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        async function addTodo(event) {
+            // 1. 第一時間阻止所有預設行為
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
+            const titleInput = document.getElementById('task-title');
+            const title = titleInput.value;
+            const priority = document.getElementById('task-priority').value;
+
+            if (!title) return alert("請輸入任務名稱");
+
+            console.log("=== 開始新增任務測試 ===");
+
+            try {
+                const res = await fetch(`${API_URL}/todos/`, fetchOptions('POST', {
+                    title: title,
+                    priority: parseInt(priority),
+                    due_date: null
+                }));
+
+                console.log("API 回應狀態碼:", res.status);
+
+                if (res.ok) {
+                    console.log("新增成功！");
+                    titleInput.value = "";
+                    // fetchTodos(); // 暫時還是關著，觀察頁面會不會動
+                } else {
+                    const errorText = await res.text();
+                    console.error("新增失敗，後端回傳:", errorText);
+
+                    if (res.status === 401) {
+                        console.warn("注意：收到 401，這可能觸發了你的登入切換邏輯");
+                    }
+                }
+            } catch (err) {
+                console.error("網路請求發生錯誤（可能是 CORS）:", err);
+            }
+        }
+
+        async function toggleComplete(id) {
+            await fetch(`${API_URL}/todos/${id}/complete`, fetchOptions('PATCH'));
+            fetchTodos();
+        }
+
+        async function deleteTodo(id) {
+            if (!confirm("確定要刪除嗎？")) return;
+            await fetch(`${API_URL}/todos/${id}`, fetchOptions('DELETE'));
+            fetchTodos();
+        }
+
+        // 頁面開啟時嘗試抓取，若失敗則停在登入頁
+        fetchTodos().then(() => {
+            // 如果請求成功（未回傳 401），則自動切換介面
+        });
+    </script>
+</body>
+
+</html>
