@@ -21,11 +21,13 @@ class TodoCreate(TodoBase):
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(index=True, unique=True) # 帳號不能重複
-    
-    # 這裡可以之後再做密碼加密，現在先存明碼或是模擬即可
     hashed_password: str
+
     # 這是關聯設定 (這是給程式看的，不是資料庫欄位)
     todos: List["Todo"] = Relationship(back_populates="owner")
+
+    # 對話紀錄關聯
+    messages: List["ChatMessage"] = Relationship(back_populates="owner")
 
 # 用來接收前端註冊資料的模型
 class UserCreate(SQLModel):
@@ -44,8 +46,20 @@ class Todo(TodoBase, table=True):
     owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
     # 這是關聯設定 (方便你用 todo.owner 直接拿到使用者資料)
     owner: Optional[User] = Relationship(back_populates="todos")
+
+# 4. 新增 ChatMessage 模型 (資料庫表格)
+class ChatMessage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    role: str   # "user" (使用者) 或 "assistant" (AI)
+    content: str # 內容
+    timestamp: datetime = Field(default_factory=datetime.now) # 自動填入時間
+    
+    # 關聯到使用者
+    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    owner: Optional["User"] = Relationship(back_populates="messages")
+
 #  增加一個「輸出專用」的模型 (加工模型)
-# 3. 給前端看的輸出 (保證有 id, 有 title, 有 is_expired)
+# 5. 給前端看的輸出 (保證有 id, 有 title, 有 is_expired)
 class TodoRead(TodoBase):
     id: int              # 這裡定義了，id 就一定會回傳
     is_completed: bool
@@ -64,6 +78,7 @@ class TodoListResponse(SQLModel):
     status: str
     total_count: int
     data: List[TodoRead]
+
 # 設定資料庫連線 (本機開發用 SQLite)
 sqlite_file_name = "database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"

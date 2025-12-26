@@ -1,15 +1,18 @@
 import bcrypt
 from fastapi import FastAPI, HTTPException, Depends, Response, Cookie, status
 from sqlmodel import Session, select, SQLModel
-from database import Todo,TodoRead,TodoListResponse, TodoCreate, User, UserCreate, engine, create_db_and_tables
+from database import Todo,TodoRead,TodoListResponse, TodoCreate, User, UserCreate, ChatMessage, engine, create_db_and_tables
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Optional
+from google import genai
+from google.genai import types # 引入型別定義，讓設定更方便
+from pydantic import BaseModel # 用來定義請求格式
+from google.api_core import exceptions
 
 # --- 🔐 安全設定 (Config) ---
 SECRET_KEY = "jasfSGSGagsShui5454g" # 真實上線時要換成很長很複雜的亂碼
@@ -94,6 +97,18 @@ def get_current_user(
     
     return user
 
+# 登入帳號格式
+class LoginRequest(SQLModel):
+    username: str
+    password: str
+
+# --- 定義請求模型 ---
+class ChatRequest(BaseModel):
+    message: str
+    api_key: str
+    # Gemini 目前主流是用 gemini-1.5-flash (快且便宜) 或 gemini-1.5-pro (強大)
+    model: str = "gemini-2.5-flash"
+
 # 啟動時建立資料庫
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -116,8 +131,11 @@ app.add_middleware(
     allow_headers = ["*"]
 )
 
-# --- API 實作開始 ---
+# ========================api路由========================
 
+# ________________________帳號功能________________________
+
+# 註冊帳號
 @app.post("/register")
 def register(user_in: UserCreate, session: Session = Depends(get_session)):
     # 檢查輸入是否空白
@@ -142,10 +160,7 @@ def register(user_in: UserCreate, session: Session = Depends(get_session)):
     
     return {"message": "註冊成功"}
 
-class LoginRequest(SQLModel):
-    username: str
-    password: str
-
+# 登入帳號
 @app.post("/login")
 def login(data: LoginRequest, response: Response, session: Session = Depends(get_session)):
     # 檢查輸入是否空白
@@ -193,6 +208,8 @@ def login(data: LoginRequest, response: Response, session: Session = Depends(get
     )
 
     return {"message": "登入成功", "access_token": access_token, "refresh_token": refresh_token}
+
+# 登出帳號
 @app.post("/logout")
 async def logout(response: Response):
     # 這裡的 key 必須跟你登入時設定的名稱一模一樣 (通常是 access_token)
@@ -204,6 +221,8 @@ async def logout(response: Response):
         secure=False  # 如果你是在本地 http 執行，設為 False
     )
     return {"message": "已登出"}
+
+# 刷新token
 @app.post("/refresh")
 def refresh_token(
     response: Response,
@@ -249,6 +268,8 @@ def refresh_token(
     except JWTError:
         raise HTTPException(status_code=401, detail="刷新失敗，請重新登入")
 
+# ________________________基本功能________________________
+
 # 1. 新增待辦事項 (Create)
 # 回傳：直接回傳新增成功的那個物件，這樣使用者可以確認 ID 是多少
 @app.post("/todos/", response_model=Todo)
@@ -289,6 +310,7 @@ def read_todos(
         "total_count": total,
         "data": [TodoRead.from_db(t) for t in results]
     }
+
 # 3. 簡單分析待辦事項
 @app.get("/todos/summary")
 def get_summary(
@@ -310,7 +332,134 @@ def get_summary(
         "completion_rate": f"{ (completed_count / len(todos) * 100) if todos else 0 }%"
     }
 
-# 4. 更改完成狀態 (Update)
+# ________________________個人助理功能________________________
+
+# 1. 聊天 API (BYOK + 儲存紀錄 + 附帶上下文)
+@app.post("/chat")
+def chat_with_gemini(
+    chat_in: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    # 1. 檢查 Key
+    if not chat_in.api_key:
+        raise HTTPException(status_code=400, detail="請提供 Google API Key")
+
+    # 2. 儲存使用者提問
+    user_msg = ChatMessage(
+        role="user",
+        content=chat_in.message,
+        owner_id=current_user.id
+    )
+    session.add(user_msg)
+    session.commit()
+
+    # ==========================================
+    # ★★★ RAG: 撈取待辦事項 (這段邏輯不變) ★★★
+    # ==========================================
+    todos = session.exec(select(Todo).where(Todo.owner_id == current_user.id)).all()
+    
+    todo_list_text = []
+    for t in todos:
+        status = "已完成" if t.is_completed else "未完成"
+        due_str = f", 到期日:{t.due_date}" if t.due_date else ""
+        info = f"- [ID:{t.id}] {t.title} (狀態:{status}, 優先度:{t.priority}{due_str})"
+        todo_list_text.append(info)
+    
+    todo_context_str = "\n".join(todo_list_text) if todo_list_text else "(目前沒有任何待辦事項)"
+
+    system_prompt = f"""
+    你是一個專業的個人任務管理助理。
+    這是使用者目前的待辦事項資料庫：
+    {todo_context_str}
+    
+    請遵守以下規則：
+    1. 根據上述資料庫回答問題。
+    2. 如果使用者問「我還有什麼事沒做？」，請幫他列出「未完成」且「優先度高」的項目。
+    3. 用繁體中文回答，語氣親切活潑。
+    4. 你無法直接操作資料庫，如果使用者想刪除或新增，請引導他操作介面按鈕。
+    """
+    
+    # ==========================================
+    # ★★★ 新版 SDK 實作開始 ★★★
+    # ==========================================
+    
+    # 3. 準備歷史對話 (轉換成新版格式)
+    # 新版格式建議：types.Content(role="user", parts=[types.Part(text="...")])
+    
+    db_history = session.exec(
+        select(ChatMessage)
+        .where(ChatMessage.owner_id == current_user.id)
+        .order_by(ChatMessage.timestamp.desc())
+        .limit(10)
+    ).all()
+    db_history = reversed(db_history)
+
+    gemini_history = []
+    for msg in db_history:
+        # 轉換角色名稱: DB存的是 "assistant" 或 "user"，但 Gemini API 用 "model" 代表 AI
+        role = "user" if msg.role == "user" else "model"
+        
+        # 建立物件
+        gemini_history.append(
+            types.Content(
+                role=role,
+                parts=[types.Part(text=msg.content)]
+            )
+        )
+
+    try:
+        # 4. 初始化 Client
+        client = genai.Client(api_key=chat_in.api_key)
+        
+        # 5. 建立聊天室並發送訊息
+        # 新版把 system_instruction 放在 config 裡面
+        chat = client.chats.create(
+            model=chat_in.model,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.7 # 可以設定創意程度
+            ),
+            history=gemini_history
+        )
+        
+        response = chat.send_message(chat_in.message)
+        ai_reply_text = response.text
+
+    except Exception as e:
+        print(f"Gemini Error: {e}") # 印出錯誤方便除錯
+        raise HTTPException(status_code=500, detail=f"Gemini API 錯誤: {str(e)}")
+    
+    # 6. 儲存 AI 回答 (這裡不變)
+    ai_msg = ChatMessage(
+        role="assistant", 
+        content=ai_reply_text,
+        owner_id=current_user.id
+    )
+    session.add(ai_msg)
+    session.commit()
+
+    return {"reply": ai_reply_text}
+
+# 2. 獲取歷史對話紀錄 (讓前端一打開頁面可以顯示舊對話)
+@app.get("/chat/history")
+def get_chat_history(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    # 撈取該使用者的所有對話 (或是限制最近 50 筆)
+    statement = (
+        select(ChatMessage)
+        .where(ChatMessage.owner_id == current_user.id)
+        .order_by(ChatMessage.timestamp.asc()) # 依照時間順序：舊 -> 新
+    )
+    results = session.exec(statement).all()
+    
+    return results
+
+# ________________________其他功能________________________
+
+# 1. 更改完成狀態 (Update)
 @app.patch("/todos/{todo_id}/complete", response_model=Todo)
 def mark_completed(todo_id: int, session: Session = Depends(get_session)):
     # 步驟 1: 根據 ID 去資料庫找這筆資料
@@ -332,7 +481,7 @@ def mark_completed(todo_id: int, session: Session = Depends(get_session)):
     
     return todo
 
-# 刪除待辦事項
+# 2. 刪除待辦事項
 @app.delete("/todos/{todo_id}")
 def delete_todo(todo_id: int, session: Session = Depends(get_session)):
     # 步驟 1: 找資料
