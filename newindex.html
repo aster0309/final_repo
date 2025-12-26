@@ -48,20 +48,38 @@
                 </div>
             </div>
 
-            <div class="flex gap-2 mb-8">
-                <input type="text" id="task-title" placeholder="輸入新的任務名稱..."
-                    class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <input type="datetime-local" id="task-due-date" 
+            <form id="todo-form" onsubmit="addTodo(event)" class="flex flex-wrap gap-2 mb-8">
+
+                <input type="text" id="task-title" placeholder="輸入新的任務名稱..." required
+                    class="flex-1 min-w-[200px] px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+
+                <input type="text" id="task-category" placeholder="類別 (如:工作)"
+                    class="w-32 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+
+                <input type="datetime-local" id="task-due-date"
                     class="px-2 py-2 border rounded-lg text-gray-600 focus:ring-2 focus:ring-blue-500">
+
                 <select id="task-priority" class="px-2 py-2 border rounded-lg">
                     <option value="1">低</option>
                     <option value="2">中</option>
                     <option value="3">高</option>
                 </select>
-                <button type="button" onclick="addTodo(event)"
-                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">新增任務</button>
-            </div>
 
+                <button type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap">
+                    新增任務
+                </button>
+            </form>
+            <div class="mb-4 relative">
+                <input type="text" id="search-input" oninput="debounceSearch()" placeholder="🔍 搜尋任務名稱..."
+                    class="w-full px-10 py-2 border rounded-full focus:ring-2 focus:ring-blue-500 outline-none">
+                <div class="absolute left-4 top-2.5 text-gray-400">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+            </div>
             <div id="todo-list" class="space-y-3">
                 <p class="text-center text-gray-500">載入中...</p>
             </div>
@@ -71,6 +89,39 @@
     <script>
         const API_URL = "http://127.0.0.1:8000";
 
+        function setMinDateTime() {
+            const now = new Date();
+
+            // 格式化為 YYYY-MM-DDTHH:mm
+            // 因為 datetime-local 需要 ISO 格式的前 16 個字元
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+
+            const currentDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+            // 設定 min 屬性
+            document.getElementById('task-due-date').min = currentDateTime;
+        }// 頁面載入時執行
+        setMinDateTime();
+
+        let currentCategory = ''; // 紀錄目前選中的分類
+
+        // 修改篩選函數
+        async function filterByCategory(category) {
+            currentCategory = category;
+            fetchTodos(); // 重新抓取資料
+        }
+        let searchTimer;
+        function debounceSearch() {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                // 直接執行 fetchTodos，它內部會自己去抓 search-input 的 value
+                fetchTodos();
+            }, 300);
+        }
         // 核心設定：讓 fetch 自動帶上 Cookie 
         const fetchOptions = (method = 'GET', body = null) => {
             const options = {
@@ -102,12 +153,11 @@
                 const res = await fetch(`${API_URL}/login`, fetchOptions('POST', { username, password }));
 
                 if (res.ok) {
-                    const data = await res.json();
                     alert("登入成功！");
-                    showTodoApp();
+                    await fetchTodos()
                 } else {
                     const errorData = await res.json().catch(() => ({ detail: "後端發生未預期錯誤" }));
-                    alert(data.detail || "登入失敗");
+                    alert(errorData.detail || "登入失敗");
                 }
             } catch (err) {
                 alert("無法連線至後端伺服器");
@@ -154,6 +204,8 @@
 
                     // 4. 強制重新整理一次頁面（最保險的做法，確保所有狀態歸零）
                     window.location.reload();
+
+                    setMinDateTime();
                 }
             } catch (err) {
                 console.error("登出連線失敗:", err);
@@ -164,31 +216,32 @@
 
         async function fetchTodos() {
             try {
-                const res = await fetch(`${API_URL}/todos/`, fetchOptions());
+                const params = new URLSearchParams();
+                const searchInput = document.getElementById('search-input');
+
+                // 核心邏輯：將搜尋框內容直接填入 category 參數
+                if (searchInput && searchInput.value.trim()) {
+                    params.append('category', searchInput.value.trim());
+                }
+
+                const url = `${API_URL}/todos/?${params.toString()}`;
+                const res = await fetch(url, fetchOptions());
 
                 if (res.status === 401) {
-                    console.warn("驗證失敗，保持在登入頁面");
-                    showLogin(); // 確保這時候顯示的是登入框
+                    console.warn("使用者未認證，請先登入");
                     return;
                 }
 
                 if (res.ok) {
                     const result = await res.json();
-
-                    // 抓取統計資料
                     const summaryRes = await fetch(`${API_URL}/todos/summary`, fetchOptions());
                     const summary = await summaryRes.json();
 
-                    // 1. 更新資料
                     updateUI(result.data, summary);
-
-                    // 2. 關鍵：成功拿到資料後，一定要執行切換介面的動作！
                     showTodoApp();
-
-                    console.log("資料更新成功！");
                 }
             } catch (err) {
-                console.error("抓取資料失敗:", err);
+                console.error("搜尋分類失敗:", err);
             }
         }
 
@@ -224,8 +277,10 @@
                             <span class="text-xs px-2 py-0.5 rounded ${todo.priority >= 3 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}">P${todo.priority}</span>
                             
                             ${(todo.is_expired && !todo.is_completed) ? '<span class="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded-full animate-pulse">已逾期</span>' : ''}
+                            <span class="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded italic">
+                                #${todo.category || '一般'}
                         </div>
-                        
+                       
                         <div class="text-xs ${todo.is_expired && !todo.is_completed ? 'text-red-400' : 'text-gray-400'} mt-1">
                             截止日：${dateDisplay}
                         </div>
@@ -240,7 +295,6 @@
                 list.appendChild(item);
             });
         }
-
         async function addTodo(event) {
             // 1. 第一時間阻止所有預設行為
             if (event) {
@@ -249,6 +303,7 @@
             }
 
             const titleInput = document.getElementById('task-title');
+            const categoryInput = document.getElementById('task-category');
             const priority = document.getElementById('task-priority').value;
             const dateInput = document.getElementById('task-due-date');
 
@@ -261,6 +316,7 @@
             try {
                 const res = await fetch(`${API_URL}/todos/`, fetchOptions('POST', {
                     title: title,
+                    category: categoryInput.value.trim() === "" ? "一般" : categoryInput.value,
                     priority: parseInt(priority),
                     due_date: dueDate ? dueDate : null
                 }));
@@ -269,15 +325,17 @@
 
                 if (res.ok) {
                     console.log("新增成功！");
+                    categoryInput.value = "";
                     titleInput.value = "";
                     dateInput.value = "";
-                    fetchTodos(); // 暫時還是關著，觀察頁面會不會動
+                    titleInput.focus();
+                    fetchTodos();
                 } else {
                     const errorText = await res.text();
                     console.error("新增失敗，後端回傳:", errorText);
 
                     if (res.status === 401) {
-                        console.warn("注意：收到 401，這可能觸發了你的登入切換邏輯");
+                        console.warn("注意：收到 401");
                     }
                 }
             } catch (err) {

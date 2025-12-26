@@ -300,7 +300,7 @@ def read_todos(
     statement = select(Todo).where(Todo.owner_id == current_user.id)
     # 如果使用者有傳入類別（不是 None），就在 SQL 加上過濾條件
     if category:
-        statement = statement.where(Todo.category == category)
+        statement = statement.where(Todo.category.contains(category))
 
     results = session.exec(statement).all()
 
@@ -329,7 +329,7 @@ def get_summary(
         "message": "待辦事項分析報告",
         "total_tasks": len(todos),
         "urgent_tasks": urgent_count, # 告訴助教：看！我有用程式判斷有多少緊急事項
-        "completion_rate": f"{ (completed_count / len(todos) * 100) if todos else 0 }%"
+        "completion_rate": f"{ int(completed_count / len(todos) * 100) if todos else 0 }%"
     }
 
 # ________________________個人助理功能________________________
