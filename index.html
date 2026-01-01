@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的待辦清單</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-6">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-4">📝 我的待辦事項</h1>
+
+        <div id="summary" class="grid grid-cols-3 gap-4 mb-8 text-center">
+            <div class="bg-blue-50 p-3 rounded-lg"><p class="text-sm text-blue-600">總任務</p><p id="total-tasks" class="text-xl font-bold">0</p></div>
+            <div class="bg-red-50 p-3 rounded-lg"><p class="text-sm text-red-600">緊急事項</p><p id="urgent-tasks" class="text-xl font-bold">0</p></div>
+            <div class="bg-green-50 p-3 rounded-lg"><p class="text-sm text-green-600">完成率</p><p id="completion-rate" class="text-xl font-bold">0%</p></div>
+        </div>
+
+        <div class="flex gap-2 mb-8">
+            <input type="text" id="task-title" placeholder="輸入新的任務名稱..." class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select id="task-priority" class="px-2 py-2 border rounded-lg">
+                <option value="1">優先度: 低</option>
+                <option value="2">優先度: 中</option>
+                <option value="3">優先度: 高</option>
+            </select>
+            <button onclick="addTodo()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">新增</button>
+        </div>
+
+        <div id="todo-list" class="space-y-3">
+            <p class="text-center text-gray-500">載入中...</p>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+
+        // 載入所有資料
+        async function fetchTodos() {
+            try {
+                // 1. 抓取列表
+                const res = await fetch(`${API_URL}/todos/`);
+                const result = await res.json();
+                
+                // 2. 抓取統計報告
+                const summaryRes = await fetch(`${API_URL}/todos/summary`);
+                const summary = await summaryRes.json();
+
+                updateUI(result.data, summary);
+            } catch (err) {
+                console.error("無法連線至 API:", err);
+            }
+        }
+
+        // 更新介面
+        function updateUI(todos, summary) {
+            // 更新統計
+            document.getElementById('total-tasks').innerText = summary.total_tasks;
+            document.getElementById('urgent-tasks').innerText = summary.urgent_tasks;
+            document.getElementById('completion-rate').innerText = summary.completion_rate;
+
+            // 更新列表
+            const list = document.getElementById('todo-list');
+            list.innerHTML = "";
+            
+            todos.forEach(todo => {
+                const item = document.createElement('div');
+                item.className = `flex items-center justify-between p-4 border rounded-lg ${todo.is_completed ? 'bg-gray-50' : 'bg-white'}`;
+                item.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" ${todo.is_completed ? 'checked' : ''} 
+                               onchange="toggleComplete(${todo.id})" 
+                               class="w-5 h-5 cursor-pointer">
+                        <div>
+                            <span class="${todo.is_completed ? 'line-through text-gray-400' : 'text-gray-800'} font-medium">
+                                ${todo.title}
+                            </span>
+                            <span class="ml-2 text-xs px-2 py-1 rounded ${todo.priority >= 3 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}">
+                                P${todo.priority}
+                            </span>
+                        </div>
+                    </div>
+                    <button onclick="deleteTodo(${todo.id})" class="text-red-400 hover:text-red-600">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        // 新增任務
+        async function addTodo() {
+            const title = document.getElementById('task-title').value;
+            const priority = document.getElementById('task-priority').value;
+            if (!title) return alert("請輸入任務名稱");
+
+            const payload = { 
+                title: title, 
+                priority: parseInt(priority),
+                due_date: null  // 暫時給 null，符合你的 Optional[datetime]
+            };
+
+            const res = await fetch(`${API_URL}/todos/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (res.ok) {
+                document.getElementById('task-title').value = "";
+                fetchTodos();
+            } else {
+                const errorData = await res.json();
+                console.error("新增失敗:", errorData);
+                alert("新增失敗，請查看 Console 報錯");
+            }
+        }
+
+        // 更新狀態
+        async function toggleComplete(id) {
+            await fetch(`${API_URL}/todos/${id}/complete`, { method: 'PATCH' });
+            fetchTodos();
+        }
+
+        // 刪除任務
+        async function deleteTodo(id) {
+            if (!confirm("確定要刪除嗎？")) return;
+            await fetch(`${API_URL}/todos/${id}`, { method: 'DELETE' });
+            fetchTodos();
+        }
+
+        // 初始執行
+        fetchTodos();
+    </script>
+</body>
+</html>
