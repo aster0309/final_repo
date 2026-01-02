@@ -93,8 +93,6 @@ else:
     sqlite_url = "sqlite:///database.db"
     engine = create_engine(sqlite_url)
 
-engine = create_engine(sqlite_url)
-
 # 初始化資料庫 (建立資料表)
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
