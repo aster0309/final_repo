@@ -122,10 +122,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 origins = [
-    "http://127.0.0.1:5500",  # Live Server 最常見的埠號   # 後端自己的埠號
-    "http://localhost:5500",
-    "http://127.0.0.1:8000",
-    "null"
+    "https://final-repo-1-cuek.onrender.com" #前端網頁部署網址
 ]
 app.add_middleware(
     CORSMiddleware,
