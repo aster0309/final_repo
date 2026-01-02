@@ -111,7 +111,7 @@ jobs:
           sleep 5
           
           # 測試 API 是否回應 / Test if API responds
-          curl -f http://localhost:8000/ || exit 1
+          curl -f http://localhost:8000/docs || exit 1
           echo "✅ Container is running!"
           
           # 清理 / Cleanup
