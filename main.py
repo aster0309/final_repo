@@ -195,8 +195,8 @@ def login(data: LoginRequest, response: Response, session: Session = Depends(get
         key="access_token", 
         value=f"Bearer {access_token}", 
         httponly=True,
-        samesite="lax", # 建議加上這個
-        secure=False 
+        samesite="none",
+        secure=True 
     )
     
     # 新增這行：把 refresh token 也存進 cookie
@@ -204,8 +204,8 @@ def login(data: LoginRequest, response: Response, session: Session = Depends(get
         key="refresh_token", 
         value=refresh_token, # Refresh token 通常不需要 "Bearer " 前綴，直接存就好
         httponly=True,
-        samesite="lax",
-        secure=False
+        samesite="none",
+        secure=True
     )
 
     return {"message": "登入成功", "access_token": access_token, "refresh_token": refresh_token}
