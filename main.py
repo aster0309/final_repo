@@ -218,8 +218,8 @@ async def logout(response: Response):
         key="access_token",
         path="/",
         httponly=True,
-        samesite="lax",
-        secure=False  # 如果你是在本地 http 執行，設為 False
+        samesite="none",
+        secure=True
     )
     return {"message": "已登出"}
 
