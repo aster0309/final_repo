@@ -534,7 +534,6 @@ def download_todos_csv(
         writer.writerow([
             t.id,
             t.title,
-            t.description or "",
             t.category or "無",
             t.priority,
             status,
