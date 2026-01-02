@@ -1,6 +1,8 @@
 #忽略虛擬環境
 .venv
 
+.env
+
 __pycache__
 
 database.db

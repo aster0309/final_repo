@@ -16,9 +16,10 @@ from google.api_core import exceptions
 import csv
 import io
 from fastapi.responses import StreamingResponse
-
+import os
 # --- 🔐 安全設定 (Config) ---
-SECRET_KEY = "jasfSGSGagsShui5454g" # 真實上線時要換成很長很複雜的亂碼
+
+SECRET_KEY = os.getenv("SECRET_KEY", "預設的開發用密碼") # 在部署平台上設定真實密碼
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30 # Token 有效期 30 分鐘
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # Refresh Token 7天後過期
