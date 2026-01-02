@@ -1,6 +1,7 @@
 from typing import List, Optional
-from sqlmodel import Field, SQLModel, create_engine, Session, Relationship
+from sqlmodel import Field, SQLModel, create_engine, Session, Relationship,create_engine
 from datetime import datetime
+import os
 
 # 1. 基礎模型 (共用欄位)
 class TodoBase(SQLModel):
@@ -79,9 +80,18 @@ class TodoListResponse(SQLModel):
     total_count: int
     data: List[TodoRead]
 
-# 設定資料庫連線 (本機開發用 SQLite)
-sqlite_file_name = "database.db"
-sqlite_url = f"sqlite:///{sqlite_file_name}"
+# 讀取 Render 設定的環境變數
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    # 修正：SQLAlchemy 要求使用 postgresql:// 而非 postgres://
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    engine = create_engine(DATABASE_URL)
+else:
+    # 如果在本機開發，沒有環境變數，就用原本的 SQLite
+    sqlite_url = "sqlite:///database.db"
+    engine = create_engine(sqlite_url)
 
 engine = create_engine(sqlite_url)
 
