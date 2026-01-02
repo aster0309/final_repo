@@ -526,7 +526,7 @@ def download_todos_csv(
     writer = csv.writer(output)
 
     # 3. 寫入標題列 (Column Headers)
-    writer.writerow(["ID", "標題", "描述", "類別", "優先度", "狀態", "到期日"])
+    writer.writerow(["ID", "標題", "類別", "優先度", "狀態", "到期日"])
 
     # 4. 寫入內容
     for t in todos:

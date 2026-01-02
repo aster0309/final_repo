@@ -70,6 +70,18 @@
                     新增任務
                 </button>
             </form>
+            <div class="flex justify-between items-center mb-4">
+                <div class="text-sm text-gray-500">
+                    想要備份資料嗎？
+                </div>
+                <button onclick="downloadCSV()" 
+                    class="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    匯出 CSV 報表
+                </button>
+            </div>
             <div class="mb-4 relative">
                 <input type="text" id="search-input" oninput="debounceSearch()" placeholder="🔍 搜尋任務名稱..."
                     class="w-full px-10 py-2 border rounded-full focus:ring-2 focus:ring-blue-500 outline-none">
@@ -142,7 +154,47 @@
                 }
             });
         }
+        async function downloadCSV() {
+            try {
+                // 注意：這裡使用 fetch 但不轉 JSON，而是轉成 blob (二進制大型物件)
+                const res = await fetch(`${API_URL}/todos/download/csv`, {
+                    method: 'GET',
+                    credentials: 'include' // 確保帶上 Cookie 以進行身分驗證
+                });
 
+                if (!res.ok) {
+                    if (res.status === 401) return alert("請先登入");
+                    throw new Error("下載失敗");
+                }
+
+                // 1. 取得檔案內容
+                const blob = await res.blob();
+                
+                // 2. 建立一個虛擬的 URL 指向這個內容
+                const url = window.URL.createObjectURL(blob);
+                
+                // 3. 建立一個隱藏的 <a> 標籤來模擬點擊下載
+                const a = document.createElement('a');
+                a.href = url;
+                
+                // 設定檔名（這會覆蓋後端建議的名稱，如果你想用後端的檔名可以省略此行）
+                const date = new Date().toISOString().slice(0, 10);
+                a.download = `我的待辦清單_${date}.csv`;
+                
+                // 執行下載
+                document.body.appendChild(a);
+                a.click();
+                
+                // 4. 清理：移除暫存物件與連結
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                
+                console.log("CSV 下載指令已發送");
+            } catch (err) {
+                console.error("下載出錯:", err);
+                alert("匯出失敗，請稍後再試");
+            }
+        }
         // --- 登入與註冊邏輯 ---
 
         async function handleLogin() {
